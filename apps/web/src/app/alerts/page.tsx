@@ -1,0 +1,29 @@
+'use client';
+
+import Link from 'next/link';
+import { useCallback, useEffect, useState } from 'react';
+import { AlertTriangle, Check, Clock3, RefreshCw } from 'lucide-react';
+import AppShell from '@/components/AppShell';
+import { api, CurrentUser } from '@/lib/api';
+
+type AlertRow = { id:string; type:string; severity:'INFO'|'WARNING'|'CRITICAL'; status:'OPEN'|'ACKNOWLEDGED'|'RESOLVED'; title:string; message:string; entity:string; entityId:string; dueAt:string|null; detectedAt:string; acknowledgedAt:string|null; acknowledgedBy:{fullName:string}|null };
+const severityLabel={INFO:'Thông tin',WARNING:'Cảnh báo',CRITICAL:'Khẩn cấp'};
+const typeLabel:Record<string,string>={SHIPMENT_DELAY:'Shipment chậm',VESSEL_DELAY:'Tàu chậm',ETA_CHANGED:'ETA thay đổi',GATE_IN_MISSED:'Chưa Gate In',CONTAINER_NOT_PICKED:'Container chưa lấy',TRUCK_LATE:'Xe trễ',INSPECTION_EXPIRY:'Đăng kiểm',INSURANCE_EXPIRY:'Bảo hiểm',LICENSE_EXPIRY:'GPLX',MAINTENANCE_DUE:'Bảo dưỡng'};
+function entityLink(row:AlertRow){return row.entity==='Shipment'?`/shipments/${row.entityId}`:row.entity==='Voyage'?`/voyages/${row.entityId}`:row.entity==='Truck'?`/fleet/${row.entityId}`:row.entity==='Driver'?`/drivers/${row.entityId}`:row.entity==='TransportJob'?`/trucking/${row.entityId}`:row.entity==='Container'?`/containers/${row.entityId}`:'/alerts';}
+function date(value:string|null){return value?new Intl.DateTimeFormat('vi-VN',{dateStyle:'medium',timeStyle:'short'}).format(new Date(value)):'—';}
+
+export default function AlertsPage(){
+  const [items,setItems]=useState<AlertRow[]>([]),[status,setStatus]=useState('OPEN'),[severity,setSeverity]=useState(''),[canManage,setCanManage]=useState(false),[busy,setBusy]=useState(''),[error,setError]=useState(''),[loading,setLoading]=useState(true);
+  const load=useCallback(async()=>{setLoading(true);try{const params=new URLSearchParams();if(status)params.set('status',status);if(severity)params.set('severity',severity);const [rows,user]=await Promise.all([api<AlertRow[]>(`/alerts?${params}`),api<CurrentUser>('/auth/me')]);setItems(rows);setCanManage(user.permissions.includes('alerts.manage'));setError('');}catch(e){setError(e instanceof Error?e.message:'Không tải được cảnh báo.');}finally{setLoading(false);}},[status,severity]);
+  useEffect(()=>{void load();},[load]);
+  async function acknowledge(id:string){setBusy(id);setError('');try{await api(`/alerts/${id}/acknowledge`,{method:'POST',body:JSON.stringify({})});await load();}catch(e){setError(e instanceof Error?e.message:'Không tiếp nhận được cảnh báo.');}finally{setBusy('');}}
+  const openCount=items.filter(x=>x.status==='OPEN').length,criticalCount=items.filter(x=>x.severity==='CRITICAL'&&x.status!=='RESOLVED').length;
+  return <AppShell title="Alerts" subtitle="Cảnh báo được đối chiếu từ tiến độ Shipment, AIS, lịch xe và hồ sơ đội xe.">
+    {error&&<div className="error-banner" role="alert">{error}</div>}
+    <div className="alert-kpi-row"><article className="alert-kpi"><span className="alert-kpi-icon warning"><AlertTriangle size={18}/></span><div><small>Cảnh báo đang mở</small><strong>{loading?'—':openCount}</strong></div></article><article className="alert-kpi"><span className="alert-kpi-icon critical"><Clock3 size={18}/></span><div><small>Mức khẩn cấp trong danh sách</small><strong>{loading?'—':criticalCount}</strong></div></article><div className="alert-refresh-note">Tự đối chiếu dữ liệu thật mỗi lần tải danh sách.</div></div>
+    <section className="panel users-panel alert-list-panel"><div className="panel-heading"><div><h3>Danh sách cảnh báo</h3><p>{items.length} mục theo bộ lọc hiện tại</p></div><button className="secondary-button alert-refresh" onClick={()=>void load()} disabled={loading}><RefreshCw size={15}/>Làm mới</button></div>
+      <div className="table-tools filters alert-filters"><select aria-label="Trạng thái cảnh báo" value={status} onChange={e=>setStatus(e.target.value)}><option value="">Tất cả trạng thái</option><option value="OPEN">Đang mở</option><option value="ACKNOWLEDGED">Đã tiếp nhận</option><option value="RESOLVED">Đã xử lý</option></select><select aria-label="Mức cảnh báo" value={severity} onChange={e=>setSeverity(e.target.value)}><option value="">Tất cả mức độ</option><option value="CRITICAL">Khẩn cấp</option><option value="WARNING">Cảnh báo</option><option value="INFO">Thông tin</option></select></div>
+      {loading?<div className="empty-table">Đang đối chiếu dữ liệu vận hành…</div>:!items.length?<div className="empty-table"><Check size={24}/><p>Không có cảnh báo phù hợp. Các chỉ số cảnh báo được lấy từ bản ghi nghiệp vụ hiện có.</p></div>:<div className="alert-cards">{items.map(row=><article className={`alert-card severity-${row.severity.toLowerCase()}`} key={row.id}><div className="alert-card-icon"><AlertTriangle size={18}/></div><div className="alert-card-main"><div className="alert-card-top"><span className={`alert-severity severity-tag-${row.severity.toLowerCase()}`}>{severityLabel[row.severity]}</span><span className="alert-type">{typeLabel[row.type]||row.type}</span><span className={`status alert-status status-${row.status.toLowerCase()}`}>{row.status==='OPEN'?'Đang mở':row.status==='ACKNOWLEDGED'?'Đã tiếp nhận':'Đã xử lý'}</span></div><strong>{row.title}</strong><p>{row.message}</p><div className="alert-card-meta"><span>Phát hiện {date(row.detectedAt)}</span>{row.dueAt&&<span>Thời hạn {date(row.dueAt)}</span>}{row.acknowledgedBy&&<span>Tiếp nhận bởi {row.acknowledgedBy.fullName}</span>}</div><div className="alert-card-actions"><Link href={entityLink(row)}>Mở hồ sơ liên quan →</Link>{canManage&&row.status==='OPEN'&&<button className="text-button" disabled={busy===row.id} onClick={()=>void acknowledge(row.id)}><Check size={14}/>{busy===row.id?'Đang lưu…':'Tiếp nhận'}</button>}</div></div></article>)}</div>}
+    </section>
+  </AppShell>;
+}

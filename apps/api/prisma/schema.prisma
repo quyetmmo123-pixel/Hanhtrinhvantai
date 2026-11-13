@@ -1,0 +1,845 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                    String                 @id @default(cuid())
+  email                 String                 @unique
+  fullName              String                 @map("full_name")
+  passwordHash          String                 @map("password_hash")
+  active                Boolean                @default(true)
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+  roles                 UserRole[]
+  sessions              Session[]
+  resetTokens           PasswordResetToken[]
+  auditLogs             AuditLog[]
+  assignedShipments     Shipment[]             @relation("ShipmentAssignee")
+  shipmentEvents        ShipmentEvent[]        @relation("ShipmentEventActor")
+  containerEvents       ContainerEvent[]       @relation("ContainerEventActor")
+  driverProfile         Driver?
+  transportEvents       TransportJobEvent[]
+  voyageEvents          VoyageEvent[]
+  voyageContainerEvents VoyageContainerEvent[]
+  uploadedDocuments     Document[]             @relation("DocumentUploader")
+  createdCosts          Cost[]                 @relation("CostCreator")
+  createdRevenues       Revenue[]              @relation("RevenueCreator")
+  createdInvoices       Invoice[]              @relation("InvoiceCreator")
+  recordedPayments      Payment[]              @relation("PaymentRecorder")
+  acknowledgedAlerts    Alert[]                 @relation("AlertAcknowledger")
+
+  @@map("users")
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  code        String           @unique
+  name        String
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id    String           @id @default(cuid())
+  code  String           @unique
+  name  String
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId String @map("user_id")
+  roleId String @map("role_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String     @map("role_id")
+  permissionId String     @map("permission_id")
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique @map("token_hash")
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique @map("token_hash")
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?  @map("actor_id")
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  changes   Json?
+  ipAddress String?  @map("ip_address")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([actorId, createdAt])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
+
+enum ShipmentStatus {
+  NEW
+  PROCESSING
+  IN_TRANSIT
+  COMPLETED
+  DELAYED
+  CANCELLED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum ShipmentMilestone {
+  CREATED
+  BOOKING
+  EMPTY_PICKUP
+  STUFFING
+  GATE_IN
+  LOADED_ON_VESSEL
+  VESSEL_DEPARTED
+  IN_TRANSIT
+  TRANSSHIPMENT
+  ARRIVED
+  DISCHARGED
+  CONTAINER_PICKUP
+  DELIVERED
+  EMPTY_RETURNED
+  COMPLETED
+}
+
+enum ContainerType {
+  GP20
+  GP40
+  HC40
+  REEFER
+}
+
+enum ContainerStatus {
+  EMPTY_RELEASED
+  PICKED_UP
+  STUFFING
+  GATE_IN
+  LOADED_ON_VESSEL
+  VESSEL_DEPARTED
+  IN_TRANSIT
+  TRANSSHIPMENT
+  ARRIVED
+  DISCHARGED
+  AVAILABLE
+  GATE_OUT
+  DELIVERED
+  EMPTY_RETURNED
+}
+
+model Customer {
+  id          String     @id @default(cuid())
+  code        String     @unique
+  companyName String     @map("company_name")
+  contactName String?    @map("contact_name")
+  phone       String?
+  email       String?
+  address     String?
+  taxId       String?    @map("tax_id")
+  notes       String?
+  active      Boolean    @default(true)
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  shipments   Shipment[]
+
+  @@index([companyName])
+  @@map("customers")
+}
+
+model Port {
+  id           String     @id @default(cuid())
+  code         String     @unique
+  name         String
+  country      String
+  shipmentsPol Shipment[] @relation("ShipmentPol")
+  shipmentsPod Shipment[] @relation("ShipmentPod")
+  voyagesPol   Voyage[]   @relation("VoyagePol")
+  voyagesPod   Voyage[]   @relation("VoyagePod")
+
+  @@map("ports")
+}
+
+model Shipment {
+  id              String              @id @default(cuid())
+  shipmentNo      String              @unique @map("shipment_no")
+  customerId      String              @map("customer_id")
+  customer        Customer            @relation(fields: [customerId], references: [id])
+  shipper         String?
+  consignee       String?
+  cargoType       String?             @map("cargo_type")
+  cargoName       String              @map("cargo_name")
+  quantity        Decimal?            @db.Decimal(14, 3)
+  weightKg        Decimal?            @map("weight_kg") @db.Decimal(14, 3)
+  cbm             Decimal?            @db.Decimal(14, 3)
+  incoterm        String?
+  polId           String?             @map("pol_id")
+  pol             Port?               @relation("ShipmentPol", fields: [polId], references: [id])
+  podId           String?             @map("pod_id")
+  pod             Port?               @relation("ShipmentPod", fields: [podId], references: [id])
+  placeOfReceipt  String?             @map("place_of_receipt")
+  placeOfDelivery String?             @map("place_of_delivery")
+  etd             DateTime?
+  atd             DateTime?
+  eta             DateTime?
+  ata             DateTime?
+  status          ShipmentStatus      @default(NEW)
+  assigneeId      String?             @map("assignee_id")
+  assignee        User?               @relation("ShipmentAssignee", fields: [assigneeId], references: [id])
+  notes           String?
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+  bookings        Booking[]
+  containers      ShipmentContainer[]
+  events          ShipmentEvent[]
+  containerEvents ContainerEvent[]
+  transportJobs   TransportJob[]
+  documents       Document[]
+  costs           Cost[]
+  revenues        Revenue[]
+  invoices        Invoice[]
+
+  @@index([customerId])
+  @@index([status, eta])
+  @@index([polId, podId])
+  @@map("shipments")
+}
+
+model Booking {
+  id            String              @id @default(cuid())
+  bookingNo     String              @unique @map("booking_no")
+  shipmentId    String              @map("shipment_id")
+  shipment      Shipment            @relation(fields: [shipmentId], references: [id])
+  shippingLine  String              @map("shipping_line")
+  status        BookingStatus       @default(PENDING)
+  confirmedAt   DateTime?           @map("confirmed_at")
+  notes         String?
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+  billsOfLading BillOfLading[]
+  containers    ShipmentContainer[]
+
+  @@index([shipmentId])
+  @@map("bookings")
+}
+
+model BillOfLading {
+  id        String    @id @default(cuid())
+  blNo      String    @unique @map("bl_no")
+  bookingId String    @map("booking_id")
+  booking   Booking   @relation(fields: [bookingId], references: [id])
+  issuedAt  DateTime? @map("issued_at")
+  notes     String?
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([bookingId])
+  @@map("bills_of_lading")
+}
+
+model Container {
+  id               String              @id @default(cuid())
+  containerNo      String              @unique @map("container_no")
+  sealNo           String?             @map("seal_no")
+  type             ContainerType
+  status           ContainerStatus     @default(EMPTY_RELEASED)
+  shippingLine     String?             @map("shipping_line")
+  notes            String?
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+  shipments        ShipmentContainer[]
+  events           ContainerEvent[]
+  transportJobs    TransportJob[]
+  voyageContainers VoyageContainer[]
+
+  @@index([status])
+  @@map("containers")
+}
+
+model ShipmentContainer {
+  id               String            @id @default(cuid())
+  shipmentId       String            @map("shipment_id")
+  shipment         Shipment          @relation(fields: [shipmentId], references: [id])
+  containerId      String            @map("container_id")
+  container        Container         @relation(fields: [containerId], references: [id])
+  bookingId        String?           @map("booking_id")
+  booking          Booking?          @relation(fields: [bookingId], references: [id])
+  assignedAt       DateTime          @default(now()) @map("assigned_at")
+  releasedAt       DateTime?         @map("released_at")
+  voyageContainers VoyageContainer[]
+
+  @@index([shipmentId])
+  @@index([containerId])
+  @@map("shipment_containers")
+}
+
+model ShipmentEvent {
+  id          String            @id @default(cuid())
+  shipmentId  String            @map("shipment_id")
+  shipment    Shipment          @relation(fields: [shipmentId], references: [id])
+  milestone   ShipmentMilestone
+  plannedAt   DateTime?         @map("planned_at")
+  actualAt    DateTime?         @map("actual_at")
+  note        String?
+  updatedById String            @map("updated_by_id")
+  updatedBy   User              @relation("ShipmentEventActor", fields: [updatedById], references: [id])
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  @@index([shipmentId, createdAt])
+  @@map("shipment_events")
+}
+
+model ContainerEvent {
+  id          String          @id @default(cuid())
+  containerId String          @map("container_id")
+  container   Container       @relation(fields: [containerId], references: [id])
+  shipmentId  String?         @map("shipment_id")
+  shipment    Shipment?       @relation(fields: [shipmentId], references: [id])
+  status      ContainerStatus
+  occurredAt  DateTime        @map("occurred_at")
+  note        String?
+  updatedById String          @map("updated_by_id")
+  updatedBy   User            @relation("ContainerEventActor", fields: [updatedById], references: [id])
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  @@index([containerId, occurredAt])
+  @@index([shipmentId])
+  @@map("container_events")
+}
+
+enum TruckType {
+  TRUCK
+  TRACTOR
+}
+
+enum TruckStatus {
+  AVAILABLE
+  ASSIGNED
+  PICKING_UP
+  IN_TRANSIT
+  DELIVERING
+  COMPLETED
+  MAINTENANCE
+}
+
+enum DriverStatus {
+  AVAILABLE
+  ASSIGNED
+  ON_TRIP
+  OFF_DUTY
+}
+
+enum TransportJobStatus {
+  ASSIGNED
+  PICKING_UP
+  IN_TRANSIT
+  DELIVERING
+  COMPLETED
+  CANCELLED
+}
+
+model Truck {
+  id                String         @id @default(cuid())
+  plateNo           String         @unique @map("plate_no")
+  type              TruckType
+  capacityKg        Decimal        @map("capacity_kg") @db.Decimal(12, 2)
+  status            TruckStatus    @default(AVAILABLE)
+  gpsDeviceId       String?        @map("gps_device_id")
+  inspectionExpires DateTime?      @map("inspection_expires")
+  insuranceExpires  DateTime?      @map("insurance_expires")
+  notes             String?
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+  trailers          Trailer[]
+  drivers           Driver[]
+  jobs              TransportJob[]
+  maintenance       Maintenance[]
+
+  @@map("trucks")
+}
+
+model Trailer {
+  id         String   @id @default(cuid())
+  plateNo    String   @unique @map("plate_no")
+  type       String
+  capacityKg Decimal  @map("capacity_kg") @db.Decimal(12, 2)
+  truckId    String?  @map("truck_id")
+  truck      Truck?   @relation(fields: [truckId], references: [id])
+  notes      String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([truckId])
+  @@map("trailers")
+}
+
+model Driver {
+  id              String         @id @default(cuid())
+  code            String         @unique
+  fullName        String         @map("full_name")
+  phone           String?
+  licenseNo       String         @unique @map("license_no")
+  licenseClass    String         @map("license_class")
+  licenseExpires  DateTime       @map("license_expires")
+  assignedTruckId String?        @map("assigned_truck_id")
+  assignedTruck   Truck?         @relation(fields: [assignedTruckId], references: [id])
+  status          DriverStatus   @default(AVAILABLE)
+  userId          String?        @unique @map("user_id")
+  user            User?          @relation(fields: [userId], references: [id])
+  notes           String?
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+  jobs            TransportJob[]
+
+  @@map("drivers")
+}
+
+model TransportJob {
+  id               String              @id @default(cuid())
+  jobNo            String              @unique @map("job_no")
+  shipmentId       String              @map("shipment_id")
+  shipment         Shipment            @relation(fields: [shipmentId], references: [id])
+  containerId      String?             @map("container_id")
+  container        Container?          @relation(fields: [containerId], references: [id])
+  truckId          String              @map("truck_id")
+  truck            Truck               @relation(fields: [truckId], references: [id])
+  driverId         String              @map("driver_id")
+  driver           Driver              @relation(fields: [driverId], references: [id])
+  pickupPlace      String              @map("pickup_place")
+  deliveryPlace    String              @map("delivery_place")
+  pickupAt         DateTime            @map("pickup_at")
+  deliveryAt       DateTime            @map("delivery_at")
+  status           TransportJobStatus  @default(ASSIGNED)
+  actualPickupAt   DateTime?           @map("actual_pickup_at")
+  actualDeliveryAt DateTime?           @map("actual_delivery_at")
+  loadedKm         Decimal?            @map("loaded_km") @db.Decimal(12, 2)
+  emptyKm          Decimal?            @map("empty_km") @db.Decimal(12, 2)
+  notes            String?
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+  events           TransportJobEvent[]
+
+  @@index([truckId, pickupAt, deliveryAt])
+  @@index([driverId, pickupAt, deliveryAt])
+  @@index([shipmentId])
+  @@map("transport_jobs")
+}
+
+model TransportJobEvent {
+  id          String             @id @default(cuid())
+  jobId       String             @map("job_id")
+  job         TransportJob       @relation(fields: [jobId], references: [id])
+  status      TransportJobStatus
+  occurredAt  DateTime           @map("occurred_at")
+  note        String?
+  updatedById String             @map("updated_by_id")
+  updatedBy   User               @relation(fields: [updatedById], references: [id])
+  createdAt   DateTime           @default(now()) @map("created_at")
+
+  @@index([jobId, occurredAt])
+  @@map("transport_job_events")
+}
+
+model Maintenance {
+  id          String    @id @default(cuid())
+  truckId     String    @map("truck_id")
+  truck       Truck     @relation(fields: [truckId], references: [id])
+  startsAt    DateTime  @map("starts_at")
+  endsAt      DateTime  @map("ends_at")
+  description String
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([truckId, startsAt, endsAt])
+  @@map("maintenance")
+}
+
+enum VesselStatus {
+  AT_PORT
+  ANCHORED
+  UNDERWAY
+  IN_TRANSIT
+  ARRIVED
+}
+
+enum VoyageStatus {
+  PLANNED
+  CONFIRMED
+  DEPARTED
+  ARRIVED
+  CANCELLED
+}
+
+enum VoyageContainerStatus {
+  BOOKED
+  LOADED
+  DISCHARGED
+  CANCELLED
+}
+
+model Vessel {
+  id           String           @id @default(cuid())
+  name         String
+  imo          String           @unique
+  mmsi         String?          @unique
+  callSign     String?          @map("call_sign")
+  flag         String?
+  shippingLine String           @map("shipping_line")
+  vesselType   String           @map("vessel_type")
+  status       VesselStatus     @default(AT_PORT)
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+  voyages      Voyage[]
+  positions    VesselPosition[]
+
+  @@index([name])
+  @@map("vessels")
+}
+
+model VesselPosition {
+  id               String    @id @default(cuid())
+  vesselId         String    @map("vessel_id")
+  vessel           Vessel    @relation(fields: [vesselId], references: [id], onDelete: Cascade)
+  latitude         Decimal   @db.Decimal(10, 7)
+  longitude        Decimal   @db.Decimal(10, 7)
+  speedKnots       Decimal?  @map("speed_knots") @db.Decimal(7, 2)
+  course           Decimal?  @db.Decimal(6, 2)
+  heading          Int?
+  navigationStatus String?   @map("navigation_status")
+  destination      String?
+  eta              DateTime?
+  provider         String
+  lastUpdate       DateTime  @map("last_update")
+  receivedAt       DateTime  @default(now()) @map("received_at")
+
+  @@index([vesselId, lastUpdate(sort: Desc)])
+  @@index([provider, receivedAt])
+  @@map("vessel_positions")
+}
+
+model Voyage {
+  id         String            @id @default(cuid())
+  voyageNo   String            @map("voyage_no")
+  vesselId   String            @map("vessel_id")
+  vessel     Vessel            @relation(fields: [vesselId], references: [id])
+  polId      String            @map("pol_id")
+  pol        Port              @relation("VoyagePol", fields: [polId], references: [id])
+  podId      String            @map("pod_id")
+  pod        Port              @relation("VoyagePod", fields: [podId], references: [id])
+  etd        DateTime
+  atd        DateTime?
+  eta        DateTime
+  ata        DateTime?
+  status     VoyageStatus      @default(PLANNED)
+  notes      String?
+  createdAt  DateTime          @default(now()) @map("created_at")
+  updatedAt  DateTime          @updatedAt @map("updated_at")
+  containers VoyageContainer[]
+  events     VoyageEvent[]
+
+  @@unique([vesselId, voyageNo])
+  @@index([status, eta])
+  @@index([polId, podId])
+  @@map("voyages")
+}
+
+model VoyageEvent {
+  id          String       @id @default(cuid())
+  voyageId    String       @map("voyage_id")
+  voyage      Voyage       @relation(fields: [voyageId], references: [id])
+  status      VoyageStatus
+  occurredAt  DateTime     @map("occurred_at")
+  note        String?
+  updatedById String       @map("updated_by_id")
+  updatedBy   User         @relation(fields: [updatedById], references: [id])
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  @@index([voyageId, occurredAt])
+  @@map("voyage_events")
+}
+
+model VoyageContainer {
+  id                  String                 @id @default(cuid())
+  voyageId            String                 @map("voyage_id")
+  voyage              Voyage                 @relation(fields: [voyageId], references: [id])
+  containerId         String                 @map("container_id")
+  container           Container              @relation(fields: [containerId], references: [id])
+  shipmentContainerId String                 @map("shipment_container_id")
+  shipmentContainer   ShipmentContainer      @relation(fields: [shipmentContainerId], references: [id])
+  status              VoyageContainerStatus  @default(BOOKED)
+  bookedAt            DateTime               @default(now()) @map("booked_at")
+  loadedAt            DateTime?              @map("loaded_at")
+  dischargedAt        DateTime?              @map("discharged_at")
+  notes               String?
+  events              VoyageContainerEvent[]
+
+  @@unique([voyageId, containerId])
+  @@index([containerId, status])
+  @@map("voyage_containers")
+}
+
+model VoyageContainerEvent {
+  id                String                @id @default(cuid())
+  voyageContainerId String                @map("voyage_container_id")
+  voyageContainer   VoyageContainer       @relation(fields: [voyageContainerId], references: [id])
+  status            VoyageContainerStatus
+  occurredAt        DateTime              @map("occurred_at")
+  note              String?
+  updatedById       String                @map("updated_by_id")
+  updatedBy         User                  @relation(fields: [updatedById], references: [id])
+  createdAt         DateTime              @default(now()) @map("created_at")
+
+  @@index([voyageContainerId, occurredAt])
+  @@map("voyage_container_events")
+}
+
+enum DocumentType {
+  BOOKING_CONFIRMATION
+  BILL_OF_LADING
+  ARRIVAL_NOTICE
+  DELIVERY_ORDER
+  COMMERCIAL_INVOICE
+  PACKING_LIST
+  INVOICE
+  CUSTOMS_DECLARATION
+  EIR
+  POD
+  OTHER
+}
+
+model Document {
+  id           String       @id @default(cuid())
+  shipmentId   String       @map("shipment_id")
+  shipment     Shipment     @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  type         DocumentType
+  originalName String       @map("original_name")
+  storageKey   String       @unique @map("storage_key")
+  mimeType     String       @map("mime_type")
+  byteSize     Int          @map("byte_size")
+  notes        String?
+  uploadedById String       @map("uploaded_by_id")
+  uploadedBy   User         @relation("DocumentUploader", fields: [uploadedById], references: [id])
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  @@index([shipmentId, createdAt])
+  @@index([type])
+  @@map("documents")
+}
+
+enum CostCategory {
+  OCEAN_FREIGHT
+  ROAD_FREIGHT
+  THC
+  LOCAL_CHARGE
+  HANDLING
+  PORT
+  DOCUMENTATION
+  CUSTOMS
+  TOLL
+  FUEL
+  DRIVER
+  DEMURRAGE
+  DETENTION
+  STORAGE
+  OTHER
+}
+
+enum RevenueCategory {
+  OCEAN_FREIGHT
+  ROAD_FREIGHT
+  THC
+  LOCAL_CHARGE
+  DOCUMENTATION
+  INVOICE
+  OTHER
+}
+
+model Cost {
+  id          String       @id @default(cuid())
+  shipmentId  String       @map("shipment_id")
+  shipment    Shipment     @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  category    CostCategory
+  description String
+  amount      Decimal      @db.Decimal(14, 2)
+  currency    String       @default("VND") @db.VarChar(3)
+  occurredAt  DateTime     @map("occurred_at")
+  notes       String?
+  createdById String       @map("created_by_id")
+  createdBy   User         @relation("CostCreator", fields: [createdById], references: [id])
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@index([shipmentId, occurredAt])
+  @@index([currency, occurredAt])
+  @@map("costs")
+}
+
+model Revenue {
+  id          String          @id @default(cuid())
+  shipmentId  String          @map("shipment_id")
+  shipment    Shipment        @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  invoiceId   String?         @unique @map("invoice_id")
+  invoice     Invoice?        @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  category    RevenueCategory
+  description String
+  amount      Decimal         @db.Decimal(14, 2)
+  currency    String          @default("VND") @db.VarChar(3)
+  occurredAt  DateTime        @map("occurred_at")
+  notes       String?
+  createdById String          @map("created_by_id")
+  createdBy   User            @relation("RevenueCreator", fields: [createdById], references: [id])
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  @@index([shipmentId, occurredAt])
+  @@index([currency, occurredAt])
+  @@map("revenues")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+}
+
+model Invoice {
+  id          String        @id @default(cuid())
+  invoiceNo   String        @unique @map("invoice_no")
+  shipmentId  String        @map("shipment_id")
+  shipment    Shipment      @relation(fields: [shipmentId], references: [id])
+  currency    String        @default("VND") @db.VarChar(3)
+  totalAmount Decimal       @map("total_amount") @db.Decimal(14, 2)
+  status      InvoiceStatus @default(DRAFT)
+  issuedAt    DateTime?     @map("issued_at")
+  dueAt       DateTime?     @map("due_at")
+  notes       String?
+  createdById String        @map("created_by_id")
+  createdBy   User          @relation("InvoiceCreator", fields: [createdById], references: [id])
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  lines       InvoiceLine[]
+  payments    Payment[]
+  revenue     Revenue?
+
+  @@index([shipmentId, status])
+  @@index([status, dueAt])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id          String  @id @default(cuid())
+  invoiceId   String  @map("invoice_id")
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Decimal @db.Decimal(14, 3)
+  unitPrice   Decimal @map("unit_price") @db.Decimal(14, 2)
+  amount      Decimal @db.Decimal(14, 2)
+
+  @@index([invoiceId])
+  @@map("invoice_lines")
+}
+
+model Payment {
+  id           String   @id @default(cuid())
+  invoiceId    String   @map("invoice_id")
+  invoice      Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount       Decimal  @db.Decimal(14, 2)
+  currency     String   @db.VarChar(3)
+  paidAt       DateTime @map("paid_at")
+  reference    String?
+  notes        String?
+  recordedById String   @map("recorded_by_id")
+  recordedBy   User     @relation("PaymentRecorder", fields: [recordedById], references: [id])
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([invoiceId, paidAt])
+  @@map("payments")
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+model Alert {
+  id                 String        @id @default(cuid())
+  sourceKey          String        @unique @map("source_key")
+  type               String        @db.VarChar(48)
+  severity           AlertSeverity
+  status             AlertStatus   @default(OPEN)
+  title              String        @db.VarChar(180)
+  message            String        @db.VarChar(1000)
+  entity             String        @db.VarChar(48)
+  entityId           String        @map("entity_id")
+  dueAt              DateTime?     @map("due_at")
+  detectedAt         DateTime      @default(now()) @map("detected_at")
+  lastSeenAt         DateTime      @default(now()) @map("last_seen_at")
+  acknowledgedAt     DateTime?     @map("acknowledged_at")
+  acknowledgedById   String?       @map("acknowledged_by_id")
+  acknowledgedBy     User?         @relation("AlertAcknowledger", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  resolvedAt         DateTime?     @map("resolved_at")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+
+  @@index([status, severity, detectedAt])
+  @@index([entity, entityId])
+  @@index([dueAt])
+  @@map("alerts")
+}

@@ -1,0 +1,20 @@
+import { IsEmail, IsString, MinLength } from 'class-validator';
+
+export class LoginDto {
+  @IsEmail() email!: string;
+  @IsString() password!: string;
+}
+
+export class ChangePasswordDto {
+  @IsString() currentPassword!: string;
+  @IsString() @MinLength(12) newPassword!: string;
+}
+
+export class ForgotPasswordDto {
+  @IsEmail() email!: string;
+}
+
+export class ResetPasswordDto {
+  @IsString() token!: string;
+  @IsString() @MinLength(12) newPassword!: string;
+}
